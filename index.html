@@ -130,6 +130,13 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
 .wine .notes { margin: 8px 0 0; font-size: 14px; }
 .wine .foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; }
 .wine .stars { margin-left: -8px; }
+.wine-row { display: flex; gap: 12px; align-items: flex-start; }
+.wine-main { flex: 1; min-width: 0; }
+.thumb { flex: none; width: 64px; height: 84px; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--chip); }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lightbox { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, 0.92); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
+.lightbox .x { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 16px; border: 0; border-radius: 999px; padding: 8px 14px; font-size: 14px; background: rgba(255, 255, 255, 0.18); color: #fff; }
 .empty { text-align: center; padding: 36px 18px; border: 1px dashed var(--line); border-radius: 14px; background: var(--surface); }
 .empty h3 { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 6px; }
 .empty p { margin: 0 auto 16px; max-width: 34ch; color: var(--ink-soft); font-size: 14px; }
@@ -252,7 +259,7 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
     </div>
     <div class="card">
       <h3>Backup</h3>
-      <p class="help">Ratings live on this phone only. Clearing browser data or changing phones erases them, so export a backup now and then.</p>
+      <p class="help">Ratings and bottle photos live on this phone only. Clearing browser data or changing phones erases them, so export a file now and then. The clipboard copy holds ratings only.</p>
       <div class="btns">
         <button class="btn ghost" type="button" id="expBtn">Export file</button>
         <button class="btn ghost" type="button" id="copyBtn">Copy to clipboard</button>
@@ -280,6 +287,7 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
   </div>
 </nav>
 <div class="toast" id="toast" role="status" hidden></div>
+<div class="lightbox" id="lightbox" hidden><img id="lbImg" alt="Bottle photo"><button type="button" class="x">Close</button></div>
 
 <script>
 (function () {
@@ -323,12 +331,52 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
 
   var state = {
     wines: loadWines(), usage: loadUsage(), tab: 'shelf', search: '', sort: 'top', formRating: 0,
-    shelf: null, busy: false, ctl: null, armed: null
+    shelf: null, busy: false, ctl: null, armed: null, photoUrl: {}, formPhoto: null
   };
   function persist() {
     if (!LS.set(K.wines, JSON.stringify(state.wines))) toast('Could not save on this phone. Free some storage and try again.');
   }
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+
+  /* ---------- bottle photos: IndexedDB, kept apart from the ratings ---------- */
+  var idbP = null;
+  function idb() {
+    if (!idbP) idbP = new Promise(function (ok, no) {
+      try {
+        var r = indexedDB.open('cellar-notes', 1);
+        r.onupgradeneeded = function () { r.result.createObjectStore('photos'); };
+        r.onsuccess = function () { ok(r.result); };
+        r.onerror = function () { no(r.error); };
+      } catch (e) { no(e); }
+    });
+    return idbP;
+  }
+  function idbTx(mode, fn) {
+    return idb().then(function (db) {
+      return new Promise(function (ok, no) {
+        var t = db.transaction('photos', mode);
+        fn(t.objectStore('photos'));
+        t.oncomplete = function () { ok(); };
+        t.onerror = t.onabort = function () { no(t.error); };
+      });
+    });
+  }
+  function photoPut(id, blob) { return idbTx('readwrite', function (st) { st.put(blob, id); }); }
+  function photoDel(id) { return idbTx('readwrite', function (st) { st.delete(id); }).catch(function () {}); }
+  function photosAll() {
+    return idb().then(function (db) {
+      return new Promise(function (ok, no) {
+        var out = {}, c = db.transaction('photos').objectStore('photos').openCursor();
+        c.onsuccess = function () { var cur = c.result; if (cur) { out[cur.key] = cur.value; cur['continue'](); } else ok(out); };
+        c.onerror = function () { no(c.error); };
+      });
+    });
+  }
+  function setPhotoUrl(id, blob) {
+    if (state.photoUrl[id]) URL.revokeObjectURL(state.photoUrl[id]);
+    state.photoUrl[id] = URL.createObjectURL(blob);
+  }
+  function toDataURL(blob) { return new Promise(function (ok, no) { var r = new FileReader(); r.onload = function () { ok(r.result); }; r.onerror = no; r.readAsDataURL(blob); }); }
 
   var toastTimer;
   function toast(t) { var el = $('toast'); el.textContent = t; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(function () { el.hidden = true; }, 2800); }
@@ -440,6 +488,21 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
     var b64 = url.split(',')[1];
     if (!b64) throw { code: 'image' };
     return b64;
+  }
+
+  async function thumb(file, maxSide) {
+    var src;
+    try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+    catch (e) { src = await loadImg(file); }
+    var w = src.width || src.naturalWidth, h = src.height || src.naturalHeight;
+    if (!w || !h) throw { code: 'image' };
+    var sc = Math.min(1, maxSide / Math.max(w, h));
+    var c = document.createElement('canvas'); c.width = Math.round(w * sc); c.height = Math.round(h * sc);
+    c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+    if (src.close) src.close();
+    var blob = await new Promise(function (ok) { c.toBlob(ok, 'image/jpeg', 0.78); });
+    if (!blob) throw { code: 'image' };
+    return blob;
   }
 
   async function vision(file, prompt, maxSide, maxTokens, ui, label) {
@@ -556,9 +619,11 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
   function setMsg(t) { $('formMsg').textContent = t; }
   function clearForm() {
     var f = fields(); Object.keys(f).forEach(function (k) { f[k].value = ''; });
-    state.formRating = 0; $('formStars').innerHTML = starsInner(0); $('formVal').textContent = HINT; setMsg('');
+    state.formRating = 0; state.formPhoto = null; $('formStars').innerHTML = starsInner(0); $('formVal').textContent = HINT; setMsg('');
   }
   async function runLabel(file) {
+    state.formPhoto = null;
+    thumb(file, 640).then(function (b) { state.formPhoto = b; }).catch(function () {});
     var prompt = [
       'The attached photo shows one wine bottle or its label. Reply with only JSON in this shape:',
       '{"name": string, "grape": string, "region": string, "vintage": string, "error": string or null}',
@@ -580,11 +645,16 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
     var f = fields(), name = f.name.value.trim();
     if (!name) { setMsg('Add the wine name.'); f.name.focus(); return; }
     if (!state.formRating) { setMsg('Choose a star rating.'); return; }
-    state.wines.push(cleanWine({
+    var w = cleanWine({
       id: newId(), name: name, grape: f.grape.value, region: f.region.value, vintage: f.vintage.value,
       notes: f.notes.value, rating: state.formRating, addedAt: Date.now()
-    }));
-    persist(); clearForm(); $('labelStatus').hidden = true; toast('Saved ' + name); renderAll();
+    });
+    var blob = state.formPhoto;
+    state.wines.push(w);
+    persist();
+    if (blob) photoPut(w.id, blob).then(function () { setPhotoUrl(w.id, blob); renderCellar(); })
+      .catch(function () { toast('Saved the rating, but the photo could not be stored.'); });
+    clearForm(); $('labelStatus').hidden = true; toast('Saved ' + name); renderAll();
   }
 
   /* ---------- cellar ---------- */
@@ -607,8 +677,11 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
     if (!list.length) { box.innerHTML = '<p class="fine">No wines match that search.</p>'; return; }
     box.innerHTML = list.map(function (w) {
       var meta = [w.grape, w.region, w.vintage].filter(Boolean).join(' · ');
-      return '<article class="wine"><h3>' + esc(w.name) + '</h3>' + (meta ? '<p class="meta">' + esc(meta) + '</p>' : '') +
-        (w.notes ? '<p class="notes">' + esc(w.notes) + '</p>' : '') +
+      var pu = state.photoUrl[w.id];
+      return '<article class="wine"><div class="wine-row">' +
+        (pu ? '<button type="button" class="thumb" data-photo="' + esc(w.id) + '" aria-label="View photo of ' + esc(w.name) + '"><img src="' + pu + '" alt=""></button>' : '') +
+        '<div class="wine-main"><h3>' + esc(w.name) + '</h3>' + (meta ? '<p class="meta">' + esc(meta) + '</p>' : '') +
+        (w.notes ? '<p class="notes">' + esc(w.notes) + '</p>' : '') + '</div></div>' +
         '<div class="foot"><div class="rate"><div class="stars sm" data-stars="wine" data-id="' + esc(w.id) + '" role="group" aria-label="Rating for ' + esc(w.name) + '">' + starsInner(w.rating) + '</div><span class="val">' + fmtRating(w.rating) + '</span></div>' +
         '<button type="button" class="link quiet" data-del="' + esc(w.id) + '">' + (state.armed === w.id ? 'Tap again to remove' : 'Remove') + '</button></div></article>';
     }).join('');
@@ -622,7 +695,7 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
     $('uIn').textContent = state.usage.inp.toLocaleString();
     $('uOut').textContent = state.usage.out.toLocaleString();
   }
-  function backupJSON() { return JSON.stringify({ app: 'cellar-notes', version: 1, exportedAt: new Date().toISOString(), wines: state.wines }, null, 2); }
+  function backupJSON(photos) { return JSON.stringify({ app: 'cellar-notes', version: 2, exportedAt: new Date().toISOString(), wines: state.wines, photos: photos || {} }); }
   function bk(t) { $('bkMsg').textContent = t; }
 
   function renderAll() {
@@ -650,11 +723,15 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
       }
       return;
     }
+    var ph = e.target.closest('[data-photo]');
+    if (ph && state.photoUrl[ph.dataset.photo]) { $('lbImg').src = state.photoUrl[ph.dataset.photo]; $('lightbox').hidden = false; return; }
     var del = e.target.closest('[data-del]');
     if (del) {
       var id = del.dataset.del;
       if (state.armed === id) {
-        state.armed = null; state.wines = state.wines.filter(function (x) { return x.id !== id; }); persist(); renderAll();
+        state.armed = null; state.wines = state.wines.filter(function (x) { return x.id !== id; }); persist();
+        if (state.photoUrl[id]) { URL.revokeObjectURL(state.photoUrl[id]); delete state.photoUrl[id]; }
+        photoDel(id); renderAll();
       } else {
         state.armed = id; renderCellar();
         setTimeout(function () { if (state.armed === id) { state.armed = null; renderCellar(); } }, 3000);
@@ -697,43 +774,57 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
   $('modelSel').addEventListener('change', function (e) { LS.set(K.model, e.target.value); toast('Model changed'); });
   $('uReset').addEventListener('click', function () { state.usage = { calls: 0, inp: 0, out: 0 }; LS.set(K.usage, JSON.stringify(state.usage)); renderSettings(); });
 
-  $('expBtn').addEventListener('click', function () {
+  $('expBtn').addEventListener('click', async function () {
     try {
+      var all = await photosAll().catch(function () { return {}; }), map = {};
+      for (var id in all) { if (state.wines.some(function (w) { return w.id === id; })) map[id] = await toDataURL(all[id]); }
       var a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([backupJSON()], { type: 'application/json' }));
+      a.href = URL.createObjectURL(new Blob([backupJSON(map)], { type: 'application/json' }));
       a.download = 'cellar-notes-' + new Date().toISOString().slice(0, 10) + '.json';
       document.body.appendChild(a); a.click(); a.remove();
-      bk('Backup file created. If nothing downloaded, use Copy to clipboard and paste it into a note.');
-    } catch (err) { bk('Could not create the file. Use Copy to clipboard instead.'); }
+      bk('Backup file created with your ratings and photos. If nothing downloaded, use Copy to clipboard for the ratings.');
+    } catch (err) { bk('Could not create the file. Use Copy to clipboard for the ratings.'); }
   });
   $('copyBtn').addEventListener('click', function () {
-    var txt = backupJSON();
+    var txt = backupJSON(null);
     (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(txt) : Promise.reject())
-      .then(function () { bk('Backup copied. Paste it into a note or email to yourself.'); })
+      .then(function () { bk('Ratings copied, without photos. Paste them into a note or email to yourself.'); })
       .catch(function () { bk('Copy was blocked. Use Export file instead.'); });
   });
   $('impFile').addEventListener('change', function (e) {
     var f = e.target.files && e.target.files[0]; e.target.value = '';
     if (!f) return;
     var r = new FileReader();
-    r.onload = function () {
+    r.onload = async function () {
       try {
         var d = JSON.parse(String(r.result)), arr = Array.isArray(d) ? d : d.wines;
         if (!Array.isArray(arr)) throw 0;
-        var have = {}, added = 0;
+        var have = {}, added = 0, pics = 0, imgs = (d && !Array.isArray(d) && d.photos) || {};
         state.wines.forEach(function (w) { have[w.id] = true; });
-        arr.map(cleanWine).filter(Boolean).forEach(function (w) { if (!have[w.id]) { state.wines.push(w); have[w.id] = true; added++; } });
-        persist(); renderAll(); bk('Imported ' + added + (added === 1 ? ' wine.' : ' wines.'));
+        var fresh = arr.map(cleanWine).filter(Boolean).filter(function (w) { if (have[w.id]) return false; have[w.id] = true; return true; });
+        fresh.forEach(function (w) { state.wines.push(w); added++; });
+        persist();
+        for (var i = 0; i < fresh.length; i++) {
+          var u = imgs[fresh[i].id];
+          if (typeof u === 'string' && u.indexOf('data:image/') === 0) {
+            try { var b = await (await fetch(u)).blob(); await photoPut(fresh[i].id, b); setPhotoUrl(fresh[i].id, b); pics++; } catch (e2) {}
+          }
+        }
+        renderAll(); bk('Imported ' + added + (added === 1 ? ' wine' : ' wines') + (pics ? ' and ' + pics + (pics === 1 ? ' photo.' : ' photos.') : '.'));
       } catch (err) { bk('That file is not a Cellar Notes backup.'); }
     };
     r.onerror = function () { bk('Could not read that file.'); };
     r.readAsText(f);
   });
 
+  $('lightbox').addEventListener('click', function () { $('lightbox').hidden = true; $('lbImg').removeAttribute('src'); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') $('lightbox').hidden = true; });
+
   /* ---------- start ---------- */
   $('formStars').innerHTML = starsInner(0);
   $('formVal').textContent = HINT;
   renderAll();
+  photosAll().then(function (all) { for (var id in all) setPhotoUrl(id, all[id]); renderCellar(); }).catch(function () {});
   if ('serviceWorker' in navigator && window.isSecureContext) {
     window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
   }
