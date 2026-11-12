@@ -51,6 +51,16 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
 .drop:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
 .drop.off { opacity: 0.55; cursor: not-allowed; }
 
+.drop2 { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.drop2 .t { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; display: block; }
+.drop2 .s { font-size: 13px; color: var(--ink-soft); display: block; margin-top: 1px; }
+.drop2.off { opacity: 0.55; }
+.shots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.shot { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--ink); font-size: 15px; font-weight: 500; cursor: pointer; }
+.shot.primary { background: var(--btn); border-color: var(--btn); color: var(--on-btn); font-weight: 600; }
+.shot svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.shot:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+
 .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .field label, .lbl { font-size: 13px; font-weight: 500; color: var(--ink-soft); }
 .field input, .field textarea, .field select, .search, .sortsel { width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 16px; }
@@ -77,14 +87,18 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
 
 .rate { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .stars { display: inline-flex; margin-left: -6px; flex: none; }
-.star { width: 44px; height: 44px; display: grid; place-items: center; background: none; border: 0; padding: 0; color: var(--ink-soft); }
-.star svg { grid-area: 1 / 1; width: 26px; height: 26px; stroke-width: 1.5; stroke-linejoin: round; }
+.star { position: relative; width: 48px; height: 48px; display: grid; place-items: center; color: var(--ink-soft); }
+.star svg { grid-area: 1 / 1; width: 28px; height: 28px; stroke-width: 1.5; stroke-linejoin: round; pointer-events: none; }
 .star .o { fill: none; stroke: currentColor; }
 .star .f { display: none; fill: var(--ink); stroke: var(--ink); }
 .star.full .f, .star.half .f { display: block; }
 .star.half .f { clip-path: inset(0 50% 0 0); }
-.stars.sm .star { width: 40px; height: 40px; }
-.stars.sm .star svg { width: 23px; height: 23px; }
+.hz { position: absolute; top: 0; bottom: 0; width: 50%; margin: 0; padding: 0; border: 0; background: none; touch-action: manipulation; }
+.hz.l { left: 0; }
+.hz.r { right: 0; }
+.hz:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.stars.sm .star { width: 44px; height: 44px; }
+.stars.sm .star svg { width: 25px; height: 25px; }
 .val { min-width: 0; font-size: 13px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 
 .taste { margin-top: 16px; padding: 14px 16px; border-radius: 12px; background: var(--chip); font-size: 14px; }
@@ -148,11 +162,7 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
       Add your Anthropic API key in Settings to read photos.<br>
       <button class="link" type="button" data-tab="settings">Open Settings</button>
     </div>
-    <label class="drop" id="shelfDrop">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.2l1.1-1.7A1.5 1.5 0 0 1 9.1 3.5h5.8a1.5 1.5 0 0 1 1.3.8L17.3 6h1.2A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><circle cx="12" cy="13" r="3.6"/></svg>
-      <span><span class="t">Photograph a shelf</span><span class="s">Take a photo or choose one. You get ranked picks.</span></span>
-      <input class="sr" type="file" id="shelfFile" accept="image/*">
-    </label>
+    <div class="drop2" id="shelfDrop"><div class="dt"><span class="t">Photograph a shelf</span><span class="s">Take a photo or choose one. You get ranked picks.</span></div><div class="shots"><label class="shot primary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.2l1.1-1.7A1.5 1.5 0 0 1 9.1 3.5h5.8a1.5 1.5 0 0 1 1.3.8L17.3 6h1.2A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><circle cx="12" cy="13" r="3.6"/></svg>Take photo<input class="sr" type="file" id="shelfCam" accept="image/*" capture="environment"></label><label class="shot"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-8 9"/></svg>Choose photo<input class="sr" type="file" id="shelfFile" accept="image/*"></label></div></div>
     <div class="form" style="margin-top:12px">
       <div class="field">
         <label for="ctx">Budget or occasion (optional)</label>
@@ -169,11 +179,7 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
 
   <!-- ADD -->
   <section id="tab-add" aria-label="Add a wine" hidden>
-    <label class="drop" id="labelDrop">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2.5h4V6l1.5 3v11a1.8 1.8 0 0 1-1.8 1.8h-3.4A1.8 1.8 0 0 1 8.5 20V9L10 6z"/><path d="M8.5 13h7"/></svg>
-      <span><span class="t">Photograph a bottle</span><span class="s">Claude reads the label and fills this in.</span></span>
-      <input class="sr" type="file" id="labelFile" accept="image/*">
-    </label>
+    <div class="drop2" id="labelDrop"><div class="dt"><span class="t">Photograph a bottle</span><span class="s">Claude reads the label and fills this in.</span></div><div class="shots"><label class="shot primary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.2l1.1-1.7A1.5 1.5 0 0 1 9.1 3.5h5.8a1.5 1.5 0 0 1 1.3.8L17.3 6h1.2A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><circle cx="12" cy="13" r="3.6"/></svg>Take photo<input class="sr" type="file" id="labelCam" accept="image/*" capture="environment"></label><label class="shot"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-8 9"/></svg>Choose photo<input class="sr" type="file" id="labelFile" accept="image/*"></label></div></div>
     <div class="status" id="labelStatus" hidden>
       <img id="labelThumb" alt="Your bottle photo">
       <div class="m" id="labelMsg"></div>
@@ -336,7 +342,9 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
     var h = '';
     for (var i = 1; i <= 5; i++) {
       var st = v >= i ? 'full' : (v >= i - 0.5 ? 'half' : '');
-      h += '<button type="button" class="star' + (st ? ' ' + st : '') + '" data-v="' + i + '" aria-label="' + i + (i === 1 ? ' star' : ' stars') + '" aria-pressed="' + (v >= i) + '">' + starSvg('o') + starSvg('f') + '</button>';
+      h += '<span class="star' + (st ? ' ' + st : '') + '">' + starSvg('o') + starSvg('f') +
+        '<button type="button" class="hz l" data-val="' + (i - 0.5) + '" aria-label="' + (i - 0.5) + ' stars"></button>' +
+        '<button type="button" class="hz r" data-val="' + i + '" aria-label="' + i + (i === 1 ? ' star' : ' stars') + '"></button></span>';
     }
     return h;
   }
@@ -631,10 +639,9 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
     var t = e.target.closest('[data-tab]');
     if (t) { setTab(t.dataset.tab); return; }
 
-    var star = e.target.closest('.star');
-    if (star) {
-      var grp = star.closest('[data-stars]'), rc = star.getBoundingClientRect();
-      var v = Number(star.dataset.v) - ((e.detail !== 0 && e.clientX - rc.left < rc.width / 2) ? 0.5 : 0);
+    var zone = e.target.closest('.hz');
+    if (zone) {
+      var grp = zone.closest('[data-stars]'), v = Number(zone.dataset.val);
       if (grp.dataset.stars === 'form') {
         state.formRating = v; grp.innerHTML = starsInner(v); $('formVal').textContent = fmtRating(v) + ' of 5'; setMsg('');
       } else {
@@ -670,7 +677,7 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 26px
       if (f) run(f);
     });
   }
-  pick('shelfFile', runShelf); pick('labelFile', runLabel);
+  pick('shelfFile', runShelf); pick('shelfCam', runShelf); pick('labelFile', runLabel); pick('labelCam', runLabel);
   $('shelfDrop').addEventListener('click', function (e) { if (!apiKey()) { e.preventDefault(); setTab('settings'); toast('Add your API key first'); } });
   $('labelDrop').addEventListener('click', function (e) { if (!apiKey()) { e.preventDefault(); setTab('settings'); toast('Add your API key first'); } });
   $('shelfStop').addEventListener('click', function () { if (state.ctl) state.ctl.abort(); });
